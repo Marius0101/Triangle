@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Windowing;
 
 namespace Triangle
@@ -14,19 +15,23 @@ namespace Triangle
         {
             "VK_LAYER_KHRONOS_validation"
         };
+        private bool enableValidation;
+        private ExtDebugUtils? debugUtils;
+        private DebugUtilsMessengerEXT debugMessenger;
         public VulkanConfiguration(IWindow? window, bool enableValidation)
         {
             vk = Vk.GetApi();
+            this.enableValidation = enableValidation;
 
-            CreateInstance(window, enableValidation);
+            CreateInstance(window);
             if(enableValidation)
                 SetupDebugMessenger();
         }
 
-        private void CreateInstance(IWindow? window, bool enableValidation)
+        private void CreateInstance(IWindow? window)
         {
             if (enableValidation && !CheckValidationLayerSupport())
-                throw new Exception("validation layers requested, but not available!");
+                throw new Exception("Validation layers requested, but not available!");
 
             ApplicationInfo appInfo = new()
             {
@@ -42,9 +47,10 @@ namespace Triangle
                 SType = StructureType.InstanceCreateInfo,
                 PApplicationInfo = &appInfo
             };
-            var glfwExtensions = window!.VkSurface!.GetRequiredExtensions(out var glfwExtensionCount);
-            createInfo.EnabledExtensionCount = glfwExtensionCount;
-            createInfo.PpEnabledExtensionNames = glfwExtensions;
+            var extensions = GetRequiredExtensions(window);
+            createInfo.EnabledExtensionCount = (uint)extensions.Length;
+            createInfo.PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions); ;
+            
             if (enableValidation)
             {
                 createInfo.EnabledLayerCount = (uint)validationLayers.Length;
@@ -66,13 +72,22 @@ namespace Triangle
 
             Marshal.FreeHGlobal((IntPtr)appInfo.PApplicationName);
             Marshal.FreeHGlobal((IntPtr)appInfo.PEngineName);
+            SilkMarshal.Free((nint)createInfo.PpEnabledExtensionNames);
             if (enableValidation)
                 SilkMarshal.Free((nint)createInfo.PpEnabledLayerNames);
         }
 
+
         private void SetupDebugMessenger()
         {
-            throw new NotImplementedException();
+           if (!vk!.TryGetInstanceExtension(instance, out debugUtils))
+                return;
+           DebugUtilsMessengerCreateInfoEXT debugCreateInfo = new();    
+           PopulateDebugMessengerCreateInfo(ref debugCreateInfo); 
+           if (debugUtils!.CreateDebugUtilsMessenger(instance, in debugCreateInfo, null, out debugMessenger) != Result.Success)
+            {
+                throw new Exception("failed to set up debug messenger!");
+            }
         }
 
         private bool CheckValidationLayerSupport()
@@ -87,6 +102,35 @@ namespace Triangle
             var availableLayerNames = availableLayers.Select(layer => Marshal.PtrToStringAnsi((IntPtr)layer.LayerName)).ToHashSet();
 
             return validationLayers.All(availableLayerNames.Contains);
+        }
+        private string[] GetRequiredExtensions(IWindow window)
+        {
+            var glfwExtensions = window!.VkSurface!.GetRequiredExtensions(out var glfwExtensionCount);
+            var extensions = SilkMarshal.PtrToStringArray((nint)glfwExtensions, (int)glfwExtensionCount);
+
+            if(enableValidation)
+                return extensions.Append(ExtDebugUtils.ExtensionName).ToArray();
+            return extensions;
+        }
+        private void PopulateDebugMessengerCreateInfo(ref DebugUtilsMessengerCreateInfoEXT debugCreateInfo)
+        {
+            debugCreateInfo.SType = StructureType.DebugUtilsMessengerCreateInfoExt;
+            debugCreateInfo.MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt |
+                                     DebugUtilsMessageSeverityFlagsEXT.WarningBitExt |
+                                     DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt;
+            debugCreateInfo.MessageType = DebugUtilsMessageTypeFlagsEXT.GeneralBitExt |
+                                 DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt |
+                                 DebugUtilsMessageTypeFlagsEXT.ValidationBitExt;
+            debugCreateInfo.PfnUserCallback = new PfnDebugUtilsMessengerCallbackEXT(DebugCallback);
+        }
+
+        private uint DebugCallback(DebugUtilsMessageSeverityFlagsEXT messageSeverity, DebugUtilsMessageTypeFlagsEXT messageTypes, DebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
+        {
+            string message = Marshal.PtrToStringAnsi((nint)pCallbackData->PMessage);
+            string idName = Marshal.PtrToStringAnsi((nint)pCallbackData->PMessageIdName);
+            Console.WriteLine($"[{messageSeverity}] [{messageTypes}] {idName}: {message}");
+
+            return Vk.False;
         }
     }
 }
