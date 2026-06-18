@@ -45,6 +45,10 @@ namespace Triangle
 
         private void CleanUp()
         {
+            if(vulkanConfiguration?.enableValidation == true)
+            {
+                vulkanConfiguration?.debugUtils?.DestroyDebugUtilsMessenger(vulkanConfiguration.instance, vulkanConfiguration.debugMessenger, null);
+            }
             vulkanConfiguration?.vk?.DestroyInstance(vulkanConfiguration.instance, null);
             vulkanConfiguration?.vk?.Dispose();
 

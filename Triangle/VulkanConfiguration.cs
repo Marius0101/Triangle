@@ -11,13 +11,14 @@ namespace Triangle
     {
         public Vk? vk;
         public Instance instance;
+        public ExtDebugUtils? debugUtils;
+        public bool enableValidation;
+        public DebugUtilsMessengerEXT debugMessenger;
         private readonly string[] validationLayers = new[]
         {
             "VK_LAYER_KHRONOS_validation"
         };
-        private bool enableValidation;
-        private ExtDebugUtils? debugUtils;
-        private DebugUtilsMessengerEXT debugMessenger;
+        
         public VulkanConfiguration(IWindow? window, bool enableValidation)
         {
             vk = Vk.GetApi();
@@ -65,8 +66,6 @@ namespace Triangle
                 createInfo.EnabledLayerCount = 0;
                 createInfo.PNext = null;
             }
-
-            createInfo.EnabledLayerCount = 0;
             if (vk!.CreateInstance(in createInfo, null, out instance) != Result.Success)
                 throw new Exception("failed to create instance!");
 
